@@ -1,0 +1,203 @@
+<aside class="sidebar-inner" aria-label="Collections and history">
+  <div class="sb-tabs" role="tablist">
+    <button role="tab" type="button" class="sb-tab" [class.active]="tab() === 'collections'" (click)="tab.set('collections')">
+      <app-icon name="layers" [size]="14" /> Collections
+    </button>
+    <button role="tab" type="button" class="sb-tab" [class.active]="tab() === 'history'" (click)="tab.set('history')">
+      <app-icon name="history" [size]="14" /> History
+    </button>
+    <button role="tab" type="button" class="sb-tab" [class.active]="tab() === 'favorites'" (click)="tab.set('favorites')" title="Favorites">
+      <app-icon name="star" [size]="14" />
+    </button>
+  </div>
+
+  <div class="sb-search">
+    <app-icon name="search" [size]="14" class="faint" />
+    <input class="search-input" placeholder="Search name, URL or method…" [value]="query()" (input)="query.set($any($event.target).value)" aria-label="Search requests" />
+    @if (query()) {
+      <button class="btn btn-ghost btn-icon sm" type="button" (click)="query.set('')" aria-label="Clear search"><app-icon name="x" [size]="12" /></button>
+    }
+  </div>
+
+  <input #importInput type="file" accept="application/json,.json" hidden (change)="importFile($event)" />
+
+  @switch (tab()) {
+    @case ('collections') {
+      <div class="sb-toolbar">
+        <span class="title">Collections</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-icon sm" type="button" (click)="newCollection()" title="New collection"><app-icon name="folder-plus" [size]="14" /></button>
+        <button class="btn btn-ghost btn-icon sm" type="button" [cdkMenuTriggerFor]="collectionsMenu" title="More actions"><app-icon name="more" [size]="14" /></button>
+        <ng-template #collectionsMenu>
+          <div class="menu" cdkMenu>
+            <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="newCollection()"><app-icon name="folder-plus" [size]="14" /> New collection</button>
+            <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="importInput.click()"><app-icon name="upload" [size]="14" /> Import JSON…</button>
+            <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="exportCollection()"><app-icon name="download" [size]="14" /> Export everything</button>
+            <div class="menu-separator"></div>
+            <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="loadDemo()"><app-icon name="sparkles" [size]="14" /> Load demo data</button>
+          </div>
+        </ng-template>
+      </div>
+
+      <div class="sb-list scroll">
+        @if (query()) {
+          @for (r of searchResults(); track r.id) {
+            <ng-container *ngTemplateOutlet="requestRow; context: { $implicit: r, depth: 0, showPath: true }" />
+          } @empty {
+            <p class="empty">No requests match “{{ query() }}”.</p>
+          }
+        } @else {
+          @for (c of collections.collections(); track c.id) {
+            <div class="node collection" (click)="toggle(c.id)" (contextmenu)="$event.preventDefault(); colTrigger.open()">
+              <app-icon [name]="isOpen(c.id) ? 'chevron-down' : 'chevron-right'" [size]="13" class="chev" />
+              <app-icon name="layers" [size]="14" class="text-accent" />
+              <span class="label ellipsis" [title]="c.description || c.name">{{ c.name }}</span>
+              @if (c.demo) {
+                <span class="badge violet tiny-badge">demo</span>
+              }
+              <span class="count">{{ countIn(c.id) }}</span>
+              <button class="btn btn-ghost btn-icon sm row-action" type="button" (click)="$event.stopPropagation()" [cdkMenuTriggerFor]="colMenu" #colTrigger="cdkMenuTriggerFor" aria-label="Collection actions">
+                <app-icon name="more-v" [size]="14" />
+              </button>
+              <ng-template #colMenu>
+                <div class="menu" cdkMenu>
+                  <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="newRequestIn(c.id, null)"><app-icon name="plus" [size]="14" /> New request</button>
+                  <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="newFolder(c.id, null)"><app-icon name="folder-plus" [size]="14" /> New folder</button>
+                  <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="renameCollection(c)"><app-icon name="edit" [size]="14" /> Rename</button>
+                  <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="exportCollection(c)"><app-icon name="download" [size]="14" /> Export</button>
+                  <div class="menu-separator"></div>
+                  <button class="menu-item danger" cdkMenuItem (cdkMenuItemTriggered)="deleteCollection(c)"><app-icon name="trash" [size]="14" /> Delete</button>
+                </div>
+              </ng-template>
+            </div>
+            @if (isOpen(c.id)) {
+              <ng-container *ngTemplateOutlet="folderContent; context: { collectionId: c.id, parentId: null, depth: 1 }" />
+            }
+          } @empty {
+            <div class="empty">
+              <p>No collections yet.</p>
+              <button class="btn sm" type="button" (click)="newCollection()"><app-icon name="plus" [size]="13" /> New collection</button>
+              <button class="btn btn-ghost sm" type="button" (click)="loadDemo()"><app-icon name="sparkles" [size]="13" /> Load demo data</button>
+            </div>
+          }
+        }
+      </div>
+    }
+
+    @case ('history') {
+      <div class="sb-toolbar">
+        <span class="title">History</span>
+        <span class="faint tiny">{{ history.count() }}</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-icon sm" type="button" (click)="clearHistory()" [disabled]="!history.count()" title="Clear history"><app-icon name="trash" [size]="14" /></button>
+      </div>
+      <div class="sb-list scroll">
+        @for (group of filteredHistory(); track group.label) {
+          <div class="group-label">{{ group.label }}</div>
+          @for (e of group.items; track e.id) {
+            <div class="node history" (click)="openExecution(e)" [title]="e.request.url">
+              <span class="method" [class]="e.request.method">{{ e.request.method }}</span>
+              <div class="grow col-tight">
+                <span class="label ellipsis">{{ e.name }}</span>
+                <span class="sub ellipsis mono">{{ e.request.url }}</span>
+              </div>
+              <div class="meta">
+                <span class="status" [class]="e.outcome === 'error' ? 'error' : statusTone(e.status)">{{ statusLabel(e) }}</span>
+                <span class="faint tiny">{{ formatMs(e.durationMs) }}</span>
+              </div>
+              <button class="btn btn-ghost btn-icon sm row-action" type="button" (click)="$event.stopPropagation()" [cdkMenuTriggerFor]="histMenu" aria-label="History actions">
+                <app-icon name="more-v" [size]="14" />
+              </button>
+              <ng-template #histMenu>
+                <div class="menu" cdkMenu>
+                  <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="openExecution(e)"><app-icon name="external" [size]="14" /> Open in new tab</button>
+                  @if (e.outcome === 'response') {
+                    <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="compare(e)"><app-icon name="compare" [size]="14" /> Compare…</button>
+                    <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="baseline(e)"><app-icon name="shield" [size]="14" /> Save as contract baseline</button>
+                  }
+                  <div class="menu-separator"></div>
+                  <button class="menu-item danger" cdkMenuItem (cdkMenuItemTriggered)="history.remove(e.id)"><app-icon name="trash" [size]="14" /> Delete</button>
+                </div>
+              </ng-template>
+            </div>
+          }
+        } @empty {
+          <div class="empty">
+            <app-icon name="history" [size]="22" />
+            <p>{{ query() ? 'No executions match your search.' : 'Executed requests will appear here. Secrets are never stored in history.' }}</p>
+          </div>
+        }
+      </div>
+    }
+
+    @case ('favorites') {
+      <div class="sb-toolbar"><span class="title">Favorites</span></div>
+      <div class="sb-list scroll">
+        @for (r of filteredFavorites(); track r.id) {
+          <ng-container *ngTemplateOutlet="requestRow; context: { $implicit: r, depth: 0, showPath: true }" />
+        } @empty {
+          <div class="empty">
+            <app-icon name="star" [size]="22" />
+            <p>Star a saved request to pin it here.</p>
+          </div>
+        }
+      </div>
+    }
+  }
+</aside>
+
+<ng-template #folderContent let-collectionId="collectionId" let-parentId="parentId" let-depth="depth">
+  @for (f of childFolders(collectionId, parentId); track f.id) {
+    <div class="node folder" [style.padding-left.px]="depth * 14 + 6" (click)="toggle(f.id)">
+      <app-icon [name]="isOpen(f.id) ? 'chevron-down' : 'chevron-right'" [size]="13" class="chev" />
+      <app-icon [name]="isOpen(f.id) ? 'folder-open' : 'folder'" [size]="14" class="text-warning" />
+      <span class="label ellipsis">{{ f.name }}</span>
+      <button class="btn btn-ghost btn-icon sm row-action" type="button" (click)="$event.stopPropagation()" [cdkMenuTriggerFor]="folderMenu" aria-label="Folder actions">
+        <app-icon name="more-v" [size]="14" />
+      </button>
+      <ng-template #folderMenu>
+        <div class="menu" cdkMenu>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="newRequestIn(collectionId, f.id)"><app-icon name="plus" [size]="14" /> New request</button>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="newFolder(collectionId, f.id)"><app-icon name="folder-plus" [size]="14" /> New sub-folder</button>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="renameFolder(f)"><app-icon name="edit" [size]="14" /> Rename</button>
+          <div class="menu-separator"></div>
+          <button class="menu-item danger" cdkMenuItem (cdkMenuItemTriggered)="deleteFolder(f)"><app-icon name="trash" [size]="14" /> Delete</button>
+        </div>
+      </ng-template>
+    </div>
+    @if (isOpen(f.id)) {
+      <ng-container *ngTemplateOutlet="folderContent; context: { collectionId: collectionId, parentId: f.id, depth: depth + 1 }" />
+    }
+  }
+  @for (r of requestsIn(collectionId, parentId); track r.id) {
+    <ng-container *ngTemplateOutlet="requestRow; context: { $implicit: r, depth: depth, showPath: false }" />
+  }
+</ng-template>
+
+<ng-template #requestRow let-r let-depth="depth" let-showPath="showPath">
+  <div class="node request" [style.padding-left.px]="depth * 14 + 20" (click)="open(r)" [title]="r.description || r.url">
+    <span class="method" [class]="r.method">{{ r.method === 'DELETE' ? 'DEL' : r.method === 'OPTIONS' ? 'OPT' : r.method }}</span>
+    <div class="grow col-tight">
+      <span class="label ellipsis">{{ r.name }}</span>
+      @if (showPath) {
+        <span class="sub ellipsis">{{ collections.folderPath(r.folderId) || r.url }}</span>
+      }
+    </div>
+    <button class="btn btn-ghost btn-icon sm star" type="button" [class.on]="r.favorite" (click)="toggleFavorite(r, $event)" [attr.aria-label]="r.favorite ? 'Remove from favorites' : 'Add to favorites'">
+      <app-icon name="star" [size]="13" [filled]="r.favorite" />
+    </button>
+    <button class="btn btn-ghost btn-icon sm row-action" type="button" (click)="$event.stopPropagation()" [cdkMenuTriggerFor]="reqMenu" aria-label="Request actions">
+      <app-icon name="more-v" [size]="14" />
+    </button>
+    <ng-template #reqMenu>
+      <div class="menu" cdkMenu>
+        <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="open(r)"><app-icon name="external" [size]="14" /> Open</button>
+        <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="renameRequest(r)"><app-icon name="edit" [size]="14" /> Rename</button>
+        <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="duplicateRequest(r)"><app-icon name="copy" [size]="14" /> Duplicate</button>
+        <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="toggleFavorite(r)"><app-icon name="star" [size]="14" /> {{ r.favorite ? 'Unfavorite' : 'Favorite' }}</button>
+        <div class="menu-separator"></div>
+        <button class="menu-item danger" cdkMenuItem (cdkMenuItemTriggered)="deleteRequest(r)"><app-icon name="trash" [size]="14" /> Delete</button>
+      </div>
+    </ng-template>
+  </div>
+</ng-template>

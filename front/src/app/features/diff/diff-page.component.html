@@ -1,0 +1,242 @@
+<div class="diff-page">
+  <!-- Sources -->
+  <div class="sources">
+    @for (side of ['left', 'right']; track side) {
+      @let value = side === 'left' ? left() : right();
+      <div class="source card">
+        <div class="source-head">
+          <span class="side-tag" [class.right-tag]="side === 'right'">{{ side === 'left' ? 'Left' : 'Right' }}</span>
+          @if (value) {
+            <span class="ellipsis source-label" [title]="value.label">{{ value.label }}</span>
+            <span class="badge">{{ value.origin }}</span>
+          } @else {
+            <span class="faint">Choose a response</span>
+          }
+        </div>
+        <div class="source-actions">
+          <select class="select sm" (change)="pickExecution($any(side), $any($event.target).value); $any($event.target).value = ''" [attr.aria-label]="'Pick ' + side + ' execution from history'">
+            <option value="">From history…</option>
+            @for (e of candidates(); track e.id) {
+              <option [value]="e.id">{{ e.request.method }} {{ e.name }} · {{ e.status }} · {{ formatMs(e.durationMs) }} · {{ timeAgo(e.createdAt) }}</option>
+            }
+          </select>
+          <button class="btn sm" type="button" (click)="paste($any(side))"><app-icon name="file-json" [size]="13" /> Paste</button>
+        </div>
+      </div>
+      @if (side === 'left') {
+        <button class="btn btn-ghost btn-icon swap" type="button" (click)="swap()" title="Swap sides" aria-label="Swap sides"><app-icon name="refresh" [size]="15" /></button>
+      }
+    }
+    <button class="btn sm demo" type="button" (click)="loadDemo()" title="Load two local demo responses"><app-icon name="sparkles" [size]="13" /> Demo</button>
+  </div>
+
+  <!-- Options -->
+  <div class="options">
+    <div class="opt-group">
+      <span class="opt-label">Arrays</span>
+      <div class="segmented">
+        <button type="button" [class.active]="options().arrayStrategy === 'index'" (click)="setOption('arrayStrategy', 'index')">By position</button>
+        <button type="button" [class.active]="options().arrayStrategy === 'key'" (click)="setOption('arrayStrategy', 'key')">By key</button>
+      </div>
+      @if (options().arrayStrategy === 'key') {
+        <input class="input sm mono key-input" [value]="options().arrayKey" (change)="setOption('arrayKey', $any($event.target).value.trim())" aria-label="Array identifier key" placeholder="id" />
+      }
+    </div>
+    <div class="opt-group">
+      <span class="opt-label">Ignore</span>
+      <label class="switch"><input type="checkbox" [checked]="options().ignoreTimestamps" (change)="setOption('ignoreTimestamps', $any($event.target).checked)" /> Timestamps</label>
+      <label class="switch"><input type="checkbox" [checked]="options().ignoreUuids" (change)="setOption('ignoreUuids', $any($event.target).checked)" /> UUIDs</label>
+      <label class="switch"><input type="checkbox" [checked]="options().ignoreIds" (change)="setOption('ignoreIds', $any($event.target).checked)" /> IDs</label>
+    </div>
+    <div class="opt-group grow chips-group">
+      <span class="opt-label">Paths</span>
+      @for (p of options().ignorePaths; track p) {
+        <span class="chip">{{ p }}<button type="button" (click)="removeIgnorePath(p)" [attr.aria-label]="'Remove ' + p"><app-icon name="x" [size]="10" /></button></span>
+      }
+      <input #pathInput class="input sm mono path-input" placeholder="$.meta.*  ·  $..updatedAt  ·  items[*].id" (keydown.enter)="addIgnorePath(pathInput)" aria-label="Add ignored path" />
+    </div>
+  </div>
+
+  @if (left() && right()) {
+    <!-- Summary -->
+    <div class="summary">
+      <span class="title"><app-icon name="compare" [size]="15" /> Results</span>
+      @if (result(); as res) {
+        <span class="total">Changes: <b>{{ res.changes.length }}</b></span>
+        <button type="button" class="stat added" [class.on]="kindFilter() === 'added'" (click)="kindFilter.set(kindFilter() === 'added' ? null : 'added')">Added: {{ res.stats.added }}</button>
+        <button type="button" class="stat removed" [class.on]="kindFilter() === 'removed'" (click)="kindFilter.set(kindFilter() === 'removed' ? null : 'removed')">Removed: {{ res.stats.removed }}</button>
+        <button type="button" class="stat modified" [class.on]="kindFilter() === 'modified'" (click)="kindFilter.set(kindFilter() === 'modified' ? null : 'modified')">Modified: {{ res.stats.modified }}</button>
+        <button type="button" class="stat type" [class.on]="kindFilter() === 'type-changed'" (click)="kindFilter.set(kindFilter() === 'type-changed' ? null : 'type-changed')">Type changed: {{ res.stats['type-changed'] }}</button>
+        @if (res.ignoredCount) {
+          <span class="faint small">Ignored: {{ res.ignoredCount }}</span>
+        }
+      } @else {
+        <span class="badge warning">Text diff (non-JSON)</span>
+        <span class="stat added">+{{ textStats().added }} lines</span>
+        <span class="stat removed">−{{ textStats().removed }} lines</span>
+      }
+      <span class="spacer"></span>
+      <button class="btn sm" type="button" [cdkMenuTriggerFor]="exportMenu"><app-icon name="download" [size]="13" /> Export…</button>
+      <ng-template #exportMenu>
+        <div class="menu" cdkMenu>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="exportJson()"><app-icon name="file-json" [size]="14" /> JSON report</button>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="exportMarkdown()"><app-icon name="file" [size]="14" /> Markdown report</button>
+        </div>
+      </ng-template>
+      <button class="btn sm" type="button" (click)="copyMarkdown()"><app-icon name="copy" [size]="13" /> Copy</button>
+      @if (result()) {
+        <button class="btn sm" type="button" (click)="step(-1)" [disabled]="!filteredChanges().length"><app-icon name="chevron-left" [size]="13" /> Prev</button>
+        <button class="btn sm" type="button" (click)="step(1)" [disabled]="!filteredChanges().length">Next <app-icon name="chevron-right" [size]="13" /></button>
+      }
+    </div>
+
+    <!-- Meta comparison -->
+    <div class="meta">
+      <div class="meta-card" [class.changed]="left()!.status !== right()!.status">
+        <span class="meta-label">Status</span>
+        <span class="meta-values">
+          <b [class]="'tone-' + statusTone(left()!.status)">{{ left()!.status ?? '—' }}</b>
+          <app-icon name="arrow-right" [size]="12" class="faint" />
+          <b [class]="'tone-' + statusTone(right()!.status)">{{ right()!.status ?? '—' }}</b>
+        </span>
+      </div>
+      <div class="meta-card">
+        <span class="meta-label">Response time</span>
+        <span class="meta-values">
+          {{ formatMs(left()!.durationMs) }} <app-icon name="arrow-right" [size]="12" class="faint" /> {{ formatMs(right()!.durationMs) }}
+          @if (timing(); as t) {
+            <span class="delta" [class.slower]="t.delta > 0" [class.faster]="t.delta < 0">{{ t.delta > 0 ? '+' : '' }}{{ t.pct.toFixed(0) }}%</span>
+          }
+        </span>
+      </div>
+      <div class="meta-card">
+        <span class="meta-label">Size</span>
+        <span class="meta-values">{{ formatBytes(left()!.size) }} <app-icon name="arrow-right" [size]="12" class="faint" /> {{ formatBytes(right()!.size) }}</span>
+      </div>
+      <button class="meta-card clickable" type="button" [class.changed]="headerChanges() > 0" (click)="showHeaders.set(!showHeaders())">
+        <span class="meta-label">Headers</span>
+        <span class="meta-values">{{ headerChanges() }} change{{ headerChanges() === 1 ? '' : 's' }} <app-icon [name]="showHeaders() ? 'chevron-up' : 'chevron-down'" [size]="12" /></span>
+      </button>
+    </div>
+
+    @if (showHeaders()) {
+      <div class="headers-diff card">
+        <table class="table">
+          <thead><tr><th style="width: 90px">Change</th><th style="width: 28%">Header</th><th>Left</th><th>Right</th></tr></thead>
+          <tbody>
+            @for (h of headerDiff(); track h.name) {
+              <tr [class]="'hd-' + h.kind">
+                <td><span class="kind-tag" [class]="h.kind">{{ h.kind === 'equal' ? '=' : h.kind }}</span></td>
+                <td class="mono">{{ h.name }}</td>
+                <td class="mono">{{ h.left ?? '' }}</td>
+                <td class="mono">{{ h.right ?? '' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        <div class="row ignored-headers">
+          <span class="faint small">Ignored headers:</span>
+          @for (h of ignoredHeaders(); track h) {
+            <span class="chip">{{ h }}<button type="button" (click)="removeIgnoredHeader(h)" [attr.aria-label]="'Stop ignoring ' + h"><app-icon name="x" [size]="10" /></button></span>
+          }
+          <input #headerInput class="input sm mono" style="width: 160px" placeholder="add header…" (keydown.enter)="addIgnoredHeader(headerInput)" aria-label="Ignore header" />
+        </div>
+      </div>
+    }
+
+    <!-- Side-by-side + changes -->
+    <div class="main">
+      <div class="panes card">
+        <div class="pane-heads">
+          <div class="pane-head"><span class="side-tag">Left</span> <span class="ellipsis">{{ left()!.label }}</span></div>
+          <div class="pane-head"><span class="side-tag right-tag">Right</span> <span class="ellipsis">{{ right()!.label }}</span></div>
+        </div>
+        <cdk-virtual-scroll-viewport #viewport class="viewport" [itemSize]="rowHeight" minBufferPx="600" maxBufferPx="1200">
+          <div *cdkVirtualFor="let row of rows(); templateCacheSize: 0" class="diff-row" [class]="'k-' + row.kind" [class.current]="isCurrent(row)">
+            @if (result()) {
+              @let r = asJsonRow(row);
+              <div class="cell left" [class.filler]="!r.left">
+                @if (r.left; as line) {
+                  <span class="ln">{{ line.no }}</span>
+                  <span class="mark">{{ r.kind === 'removed' ? '−' : r.kind === 'modified' ? '~' : r.kind === 'type-changed' ? '±' : '' }}</span>
+                  <span class="code" [style.padding-left.px]="line.indent * 14" [title]="(line.key !== undefined ? line.key + ': ' : '') + line.text"
+                    >@if (line.key !== undefined) {<span class="tok-key">"{{ line.key }}"</span><span class="tok-punct">: </span>}<span [class]="'tok-' + line.textType">{{ line.text }}</span
+                    >@if (line.comma) {<span class="tok-punct">,</span>}</span
+                  >
+                }
+              </div>
+              <div class="cell right" [class.filler]="!r.right">
+                @if (r.right; as line) {
+                  <span class="ln">{{ line.no }}</span>
+                  <span class="mark">{{ r.kind === 'added' ? '+' : r.kind === 'modified' ? '~' : r.kind === 'type-changed' ? '±' : '' }}</span>
+                  <span class="code" [style.padding-left.px]="line.indent * 14" [title]="(line.key !== undefined ? line.key + ': ' : '') + line.text"
+                    >@if (line.key !== undefined) {<span class="tok-key">"{{ line.key }}"</span><span class="tok-punct">: </span>}<span [class]="'tok-' + line.textType">{{ line.text }}</span
+                    >@if (line.comma) {<span class="tok-punct">,</span>}</span
+                  >
+                }
+              </div>
+            } @else {
+              <div class="cell left" [class.filler]="!row.left">
+                @if (row.left; as line) {
+                  <span class="ln">{{ line.no }}</span><span class="mark">{{ row.kind === 'removed' ? '−' : '' }}</span><span class="code">{{ $any(line).text }}</span>
+                }
+              </div>
+              <div class="cell right" [class.filler]="!row.right">
+                @if (row.right; as line) {
+                  <span class="ln">{{ line.no }}</span><span class="mark">{{ row.kind === 'added' ? '+' : '' }}</span><span class="code">{{ $any(line).text }}</span>
+                }
+              </div>
+            }
+          </div>
+        </cdk-virtual-scroll-viewport>
+      </div>
+
+      @if (result(); as res) {
+        <aside class="changes card">
+          <div class="changes-head">
+            <span class="title"><app-icon name="tree" [size]="14" /> Changes</span>
+            <span class="spacer"></span>
+            <span class="faint small">{{ current() >= 0 ? current() + 1 : 0 }}/{{ res.changes.length }}</span>
+          </div>
+          <div class="changes-filter">
+            <input class="input sm" placeholder="Filter by path or value" [value]="changeFilter()" (input)="changeFilter.set($any($event.target).value)" aria-label="Filter changes" />
+          </div>
+          <div class="changes-list scroll">
+            @for (c of filteredChanges(); track c.index) {
+              <button type="button" class="change" [class]="c.kind" [class.active]="res.changes[current()] === c" (click)="goTo(c)">
+                <span class="kind">{{ kindLabel(c.kind) }}</span>
+                <span class="body">
+                  <span class="path mono">{{ c.path }}</span>
+                  @if (c.left !== undefined) {
+                    <span class="val mono"><span class="faint">from:</span> {{ preview(c.left) }}</span>
+                  }
+                  @if (c.right !== undefined) {
+                    <span class="val mono"><span class="faint">to:</span> {{ preview(c.right) }}</span>
+                  }
+                </span>
+                <span class="ignore" role="button" tabindex="0" title="Ignore this path" (click)="$event.stopPropagation(); ignoreChangePath(c)" (keydown.enter)="$event.stopPropagation(); ignoreChangePath(c)"><app-icon name="eye-off" [size]="12" /></span>
+              </button>
+            } @empty {
+              <div class="empty-state">
+                @if (res.changes.length === 0) {
+                  <div class="icon-wrap"><app-icon name="check" [size]="22" /></div>
+                  <h3>No differences</h3>
+                  <p>Both bodies are structurally identical{{ res.ignoredCount ? ' (ignoring ' + res.ignoredCount + ' dynamic value(s))' : '' }}.</p>
+                } @else {
+                  <p>No changes match the filter.</p>
+                }
+              </div>
+            }
+          </div>
+        </aside>
+      }
+    </div>
+  } @else {
+    <div class="empty-state">
+      <div class="icon-wrap"><app-icon name="compare" [size]="24" /></div>
+      <h3>Smart API Diff</h3>
+      <p>Pick two executions from history (two runs of the same request or different requests), paste JSON, or load the local demo to compare status, headers, timing and JSON structure.</p>
+      <button class="btn btn-primary" type="button" (click)="loadDemo()"><app-icon name="sparkles" [size]="14" /> Load demo comparison</button>
+    </div>
+  }
+</div>

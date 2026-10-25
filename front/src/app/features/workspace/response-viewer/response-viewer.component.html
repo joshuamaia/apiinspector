@@ -1,0 +1,205 @@
+<section class="response" aria-label="Response">
+  @if (running()) {
+    <div class="progress"><span></span></div>
+    <div class="empty-state">
+      <div class="icon-wrap running-icon"><span class="spinner big"></span></div>
+      <h3>Sending request…</h3>
+      <p class="mono">{{ formatMs(elapsed()) }}</p>
+      <button class="btn btn-danger" type="button" (click)="cancel.emit()"><app-icon name="square" [size]="12" /> Cancel request</button>
+    </div>
+  } @else if (!record()) {
+    <div class="empty-state">
+      <div class="icon-wrap"><app-icon name="send" [size]="24" /></div>
+      <h3>Send a request to see the response</h3>
+      <p>Enter a URL and press <span class="kbd">Ctrl</span> + <span class="kbd">Enter</span>. Requests go through the secure BFF proxy.</p>
+    </div>
+  } @else if (error(); as err) {
+    <div class="error-view">
+      <div class="error-card">
+        <div class="error-icon"><app-icon [name]="explanation()!.icon" [size]="26" /></div>
+        <div class="col grow">
+          <div class="row wrap">
+            <h3>{{ explanation()!.title }}</h3>
+            <span class="badge danger mono">{{ err.kind }}</span>
+            <span class="badge">{{ explanation()!.transport ? 'Transport error — no HTTP response from the target' : 'Request rejected before reaching the target' }}</span>
+          </div>
+          <p class="message mono">{{ err.message }}</p>
+          <p class="muted">{{ explanation()!.hint }}</p>
+          <div class="row faint small">
+            <span><app-icon name="clock" [size]="12" /> {{ formatMs(record()!.durationMs) }}</span>
+            <span>{{ formatDateTime(record()!.createdAt) }}</span>
+            <span class="mono ellipsis">{{ record()!.request.method }} {{ record()!.request.url }}</span>
+          </div>
+          @if (err.kind !== 'INVALID_URL' && err.kind !== 'VALIDATION') {
+            <div><button class="btn sm" type="button" (click)="retry.emit()"><app-icon name="refresh" [size]="13" /> Retry</button></div>
+          }
+        </div>
+      </div>
+    </div>
+  } @else if (response(); as res) {
+    <div class="summary">
+      <span class="status-pill" [class]="tone()">{{ statusLabel() }}</span>
+      <span class="metric" title="Total time"><app-icon name="clock" [size]="13" /> {{ formatMs(record()!.durationMs) }}</span>
+      <span class="metric" title="Decoded size (wire size)">
+        <app-icon name="database" [size]="13" /> {{ formatBytes(res.size) }}
+        @if (res.encodedSize && res.encodedSize !== res.size) {
+          <span class="faint">({{ formatBytes(res.encodedSize) }} on wire)</span>
+        }
+      </span>
+      @if (res.contentType) {
+        <span class="metric ellipsis ct" [title]="res.contentType"><app-icon name="file" [size]="13" /> {{ res.contentType }}</span>
+      }
+      @if (res.redirects.length) {
+        <span class="badge info" [title]="'Final URL: ' + res.finalUrl">{{ res.redirects.length }} redirect{{ res.redirects.length > 1 ? 's' : '' }}</span>
+      }
+      @if (record()!.virtual) {
+        <span class="badge violet" title="Served in-process by the BFF demo API">demo API</span>
+      }
+      <span class="spacer"></span>
+      <button class="btn btn-ghost sm" type="button" (click)="compare()" title="Compare with another execution"><app-icon name="compare" [size]="13" /> <span class="hide-sm">Compare</span></button>
+      <button class="btn btn-ghost sm" type="button" (click)="saveBaseline()" title="Save as contract baseline"><app-icon name="shield" [size]="13" /> <span class="hide-sm">Baseline</span></button>
+    </div>
+    @if (tone() === 'client' || tone() === 'server') {
+      <div class="http-error-note"><app-icon name="info" [size]="12" /> HTTP error returned by the API ({{ tone() === 'client' ? 'client error 4xx' : 'server error 5xx' }}) — the transport succeeded.</div>
+    }
+    @for (w of res.warnings; track w) {
+      <div class="warning-note"><app-icon name="alert" [size]="12" /> {{ w }}</div>
+    }
+    @if (record()!.storedBodyTruncated) {
+      <div class="warning-note"><app-icon name="alert" [size]="12" /> The body stored in history was truncated (see Settings → stored body limit).</div>
+    }
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" type="button" [class.active]="tab() === 'body'" (click)="tab.set('body')">Body</button>
+      <button class="tab" role="tab" type="button" [class.active]="tab() === 'headers'" (click)="tab.set('headers')">Headers <span class="count">{{ res.headers.length }}</span></button>
+      <button class="tab" role="tab" type="button" [class.active]="tab() === 'cookies'" (click)="tab.set('cookies')">
+        Cookies @if (res.cookies.length) { <span class="count">{{ res.cookies.length }}</span> }
+      </button>
+      <button class="tab" role="tab" type="button" [class.active]="tab() === 'request'" (click)="tab.set('request')">Request</button>
+      <button class="tab" role="tab" type="button" [class.active]="tab() === 'timeline'" (click)="tab.set('timeline')">Timeline</button>
+    </nav>
+
+    <div class="tab-content">
+      @switch (tab()) {
+        @case ('body') {
+          <app-response-body [response]="res" [name]="record()!.name" />
+        }
+        @case ('headers') {
+          <div class="pad scroll">
+            <div class="filter">
+              <app-icon name="search" [size]="13" class="faint" />
+              <input class="input sm" placeholder="Filter by name or value" [value]="headerFilter()" (input)="headerFilter.set($any($event.target).value)" aria-label="Filter headers" />
+            </div>
+            <table class="table">
+              <thead><tr><th style="width: 34%">Name</th><th>Value</th></tr></thead>
+              <tbody>
+                @for (h of filteredHeaders(); track $index) {
+                  <tr><td class="mono key">{{ h[0] }}</td><td class="mono">{{ h[1] }}</td></tr>
+                } @empty {
+                  <tr><td colspan="2" class="faint">No headers match.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        @case ('cookies') {
+          <div class="pad scroll">
+            @if (res.cookies.length) {
+              <table class="table">
+                <thead><tr><th>Name</th><th>Value</th><th>Domain / Path</th><th>Expires</th><th>Flags</th></tr></thead>
+                <tbody>
+                  @for (c of res.cookies; track c.name + $index) {
+                    <tr>
+                      <td class="mono key">{{ c.name }}</td>
+                      <td class="mono">
+                        <span class="cookie-value">
+                          {{ cookieValue(c) }}
+                          @if (isSensitiveCookie(c)) {
+                            <button class="btn btn-ghost btn-icon sm" type="button" (click)="toggleCookie(c.name)" [attr.aria-label]="revealed().has(c.name) ? 'Hide value' : 'Reveal value'">
+                              <app-icon [name]="revealed().has(c.name) ? 'eye-off' : 'eye'" [size]="12" />
+                            </button>
+                          }
+                        </span>
+                      </td>
+                      <td class="mono">{{ c.domain || '—' }} {{ c.path || '' }}</td>
+                      <td class="small">{{ c.expires || (c.maxAge !== undefined ? 'max-age ' + c.maxAge + 's' : 'Session') }}</td>
+                      <td class="flags">
+                        @if (c.httpOnly) { <span class="badge">HttpOnly</span> }
+                        @if (c.secure) { <span class="badge success">Secure</span> }
+                        @if (c.sameSite) { <span class="badge info">SameSite={{ c.sameSite }}</span> }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <p class="faint tiny">Values of session-like and HttpOnly cookies are masked by default.</p>
+            } @else {
+              <div class="empty-state"><p>No cookies were set by this response.</p></div>
+            }
+          </div>
+        }
+        @case ('request') {
+          <div class="pad scroll col">
+            <div class="kv-grid">
+              <span>Method</span><b class="method" [class]="record()!.request.method">{{ record()!.request.method }}</b>
+              <span>URL</span><b class="mono break">{{ record()!.request.url }}</b>
+              <span>Final URL</span><b class="mono break">{{ res.finalUrl }}</b>
+            </div>
+            <h4 class="section-title">Headers sent by the proxy</h4>
+            <table class="table">
+              <tbody>
+                @for (h of record()!.requestHeaders ?? []; track $index) {
+                  <tr><td class="mono key" style="width: 34%">{{ h[0] }}</td><td class="mono">{{ h[1] }}</td></tr>
+                }
+              </tbody>
+            </table>
+            @if (record()!.droppedHeaders?.length) {
+              <div class="alert warning small">
+                <app-icon name="alert" [size]="14" />
+                <div>
+                  <b>Headers not sent:</b>
+                  @for (d of record()!.droppedHeaders!; track d.key) {
+                    <div class="mono">{{ d.key }} — {{ d.reason }}</div>
+                  }
+                </div>
+              </div>
+            }
+            <p class="faint tiny">Secret values are masked; the stored snapshot never contains tokens or passwords.</p>
+          </div>
+        }
+        @case ('timeline') {
+          <div class="pad scroll col">
+            <div class="kv-grid">
+              <span>Date</span><b>{{ formatDateTime(record()!.createdAt) }}</b>
+              <span>Status</span><b>{{ statusLabel() }}</b>
+              <span>Total time</span><b>{{ formatMs(record()!.durationMs) }}</b>
+              <span>HTTP version</span><b>{{ res.httpVersion }}</b>
+              <span>Remote address</span><b class="mono">{{ res.remoteAddress || (record()!.virtual ? 'in-process (demo API)' : '—') }}</b>
+            </div>
+            @if (timingBars().length) {
+              <h4 class="section-title">Timing breakdown</h4>
+              <div class="waterfall">
+                @for (bar of timingBars(); track bar.label) {
+                  <div class="wf-row">
+                    <span class="wf-label">{{ bar.label }}</span>
+                    <div class="wf-track"><span class="wf-bar" [style.left.%]="bar.left" [style.width.%]="bar.width" [style.background]="bar.color"></span></div>
+                    <span class="wf-value mono">{{ formatMs(bar.duration) }}</span>
+                  </div>
+                }
+              </div>
+            }
+            @if (res.redirects.length) {
+              <h4 class="section-title">Redirect chain</h4>
+              <ol class="redirects">
+                <li class="mono">{{ record()!.request.url }}</li>
+                @for (r of res.redirects; track $index) {
+                  <li class="mono"><span class="badge info">{{ r.status }}</span> → {{ r.url }}</li>
+                }
+              </ol>
+            }
+          </div>
+        }
+      }
+    </div>
+  }
+</section>

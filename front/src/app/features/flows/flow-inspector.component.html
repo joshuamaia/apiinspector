@@ -1,0 +1,168 @@
+@if (node(); as n) {
+  <div class="inspector">
+    <div class="ins-head">
+      <button class="btn btn-ghost btn-icon sm" type="button" (click)="selectNode.emit(null)" title="Back to flow settings" aria-label="Back"><app-icon name="arrow-left" [size]="14" /></button>
+      <input class="input name-input" [value]="n.name" (input)="setName($any($event.target).value)" aria-label="Step name" />
+      <button class="btn btn-danger btn-icon sm" type="button" (click)="removeNode.emit(n.id)" title="Delete step" aria-label="Delete step"><app-icon name="trash" [size]="14" /></button>
+    </div>
+
+    @if (step(); as s) {
+      <div class="result" [class]="s.status">
+        <div class="row">
+          <span class="badge" [class.success]="s.status === 'success'" [class.danger]="s.status === 'failed'" [class.accent]="s.status === 'running'">{{ s.status }}</span>
+          @if (s.httpStatus) {
+            <span class="mono">HTTP {{ s.httpStatus }}</span>
+          }
+          @if (s.durationMs !== undefined) {
+            <span class="faint small">{{ formatMs(s.durationMs) }}</span>
+          }
+          <span class="spacer"></span>
+          @if (s.executionId) {
+            <button class="btn btn-ghost sm" type="button" (click)="openExecution(s.executionId)"><app-icon name="external" [size]="12" /> Open response</button>
+          }
+        </div>
+        @if (s.resolvedUrl) {
+          <div class="mono small resolved ellipsis" [title]="s.resolvedUrl">{{ s.resolvedUrl }}</div>
+        }
+        @if (s.error) {
+          <div class="text-danger small"><app-icon name="alert" [size]="12" /> {{ s.error }}</div>
+        }
+        @for (e of s.extractionErrors; track e) {
+          <div class="text-danger small mono">{{ e }}</div>
+        }
+        @for (entry of s.extracted | keyvalue; track entry.key) {
+          <div class="small mono extracted"><span class="text-accent">{{ entry.key }}</span> = {{ preview(entry.value) }}</div>
+        }
+      </div>
+    }
+
+    <app-request-editor [request]="n.request" [showSend]="false" [compact]="true" [knownVariables]="available()" (requestChange)="setRequest($event)" />
+
+    <section>
+      <h4>Assertions</h4>
+      <div class="grid2">
+        <div class="field">
+          <label for="exp-status">Expected status</label>
+          <input id="exp-status" class="input sm mono" [value]="n.expectedStatus" (input)="setExpected($any($event.target).value)" placeholder="2xx · 200,201 · 200-299 · !5xx" />
+        </div>
+        <label class="switch cont">
+          <input type="checkbox" [checked]="n.continueOnError" (change)="setContinue($any($event.target).checked)" />
+          Continue flow if this step fails
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <div class="row">
+        <h4>Extract variables</h4>
+        <span class="spacer"></span>
+        <button class="btn sm" type="button" (click)="addExtraction()"><app-icon name="plus" [size]="12" /> Add</button>
+      </div>
+      <p class="faint tiny">Use them in later steps as <code>{{ varSyntax }}</code>. Values are validated for existence and type.</p>
+      @for (e of n.extractions; track e.id) {
+        <div class="extraction">
+          <div class="ex-row">
+            <input class="input sm mono" [value]="e.name" (input)="updateExtraction(e.id, { name: $any($event.target).value })" placeholder="variable" aria-label="Variable name" />
+            <select class="select sm" [value]="e.source" (change)="updateExtraction(e.id, { source: $any($event.target).value })" aria-label="Source">
+              <option value="body">Body</option>
+              <option value="header">Header</option>
+              <option value="status">Status</option>
+            </select>
+            @if (e.source === 'body') {
+              <select class="select sm" [value]="e.syntax" (change)="updateExtraction(e.id, { syntax: $any($event.target).value, expression: $any($event.target).value === 'pointer' ? '/' : '$.' })" aria-label="Syntax">
+                <option value="jsonpath">JSONPath</option>
+                <option value="pointer">JSON Pointer</option>
+              </select>
+            }
+            <button class="btn btn-ghost btn-icon sm" type="button" (click)="removeExtraction(e.id)" aria-label="Remove extraction"><app-icon name="trash" [size]="12" /></button>
+          </div>
+          @if (e.source !== 'status') {
+            <input
+              class="input sm mono"
+              [value]="e.expression"
+              (input)="updateExtraction(e.id, { expression: $any($event.target).value })"
+              [placeholder]="e.source === 'header' ? 'Header-Name' : e.syntax === 'pointer' ? '/data/token' : '$.data.token'"
+              aria-label="Expression"
+            />
+          }
+          <div class="ex-row">
+            <span class="faint tiny">Type</span>
+            <select class="select sm" [value]="e.expectedType" (change)="updateExtraction(e.id, { expectedType: $any($event.target).value })" aria-label="Expected type">
+              <option value="any">any</option>
+              <option value="string">string</option>
+              <option value="number">number</option>
+              <option value="boolean">boolean</option>
+              <option value="object">object</option>
+              <option value="array">array</option>
+            </select>
+            <label class="switch"><input type="checkbox" [checked]="e.required" (change)="updateExtraction(e.id, { required: $any($event.target).checked })" /> Required</label>
+          </div>
+        </div>
+      } @empty {
+        <p class="faint small">No extractions. Example: <code>token</code> ← <code>$.accessToken</code></p>
+      }
+    </section>
+  </div>
+} @else {
+  <div class="inspector">
+    <section>
+      <div class="field">
+        <label for="flow-name">Flow name</label>
+        <input id="flow-name" class="input" [value]="flow().name" (change)="flowChange.emit({ name: $any($event.target).value })" />
+      </div>
+      <div class="field">
+        <label for="flow-desc">Description</label>
+        <textarea id="flow-desc" class="textarea" rows="2" [value]="flow().description" (change)="flowChange.emit({ description: $any($event.target).value })"></textarea>
+      </div>
+      <label class="switch">
+        <input type="checkbox" [checked]="flow().stopOnError" (change)="flowChange.emit({ stopOnError: $any($event.target).checked })" />
+        Stop the whole flow on the first failure
+      </label>
+    </section>
+
+    <section>
+      <h4>Initial variables</h4>
+      <app-key-value-editor [items]="flow().variables" kind="variables" keyPlaceholder="name" valuePlaceholder="value" (itemsChange)="setVariables($event)" />
+    </section>
+
+    <section>
+      <h4>Last run</h4>
+      @if (run(); as r) {
+        <div class="row">
+          <span class="badge" [class.success]="r.status === 'success'" [class.danger]="r.status === 'failed'" [class.accent]="r.status === 'running'" [class.warning]="r.status === 'cancelled'">{{ r.status }}</span>
+          @if (totalDuration() !== null) {
+            <span class="faint small">{{ formatMs(totalDuration()) }} total</span>
+          }
+        </div>
+        <ol class="steps">
+          @for (item of orderedSteps(); track item.step.nodeId) {
+            <li [class]="item.step.status" (click)="selectNode.emit(item.step.nodeId)">
+              <span class="dot"></span>
+              <span class="method" [class]="item.node!.request.method">{{ item.node!.request.method }}</span>
+              <span class="ellipsis grow">{{ item.node!.name }}</span>
+              @if (item.step.httpStatus) {
+                <span class="mono small">{{ item.step.httpStatus }}</span>
+              }
+              <span class="faint tiny">{{ item.step.durationMs !== undefined ? formatMs(item.step.durationMs) : item.step.status }}</span>
+            </li>
+          }
+        </ol>
+        @if (variableEntries().length) {
+          <h4>Variables after run</h4>
+          <table class="table vars">
+            <tbody>
+              @for (v of variableEntries(); track v[0]) {
+                <tr>
+                  <td class="mono text-accent">{{ v[0] }}</td>
+                  <td class="mono">{{ preview(v[1]) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      } @else {
+        <p class="faint small">Run the flow to see the status and timing of each step.</p>
+      }
+    </section>
+  </div>
+}

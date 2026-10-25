@@ -1,0 +1,191 @@
+<div class="flows-page">
+  <div class="toolbar">
+    <app-icon name="workflow" [size]="16" class="text-accent" />
+    <select class="select sm flow-select" [value]="store.selectedId() ?? ''" (change)="select($any($event.target).value)" aria-label="Select flow">
+      @for (f of store.flows(); track f.id) {
+        <option [value]="f.id" [selected]="f.id === store.selectedId()">{{ f.name }}</option>
+      }
+      @if (!store.flows().length) {
+        <option value="">No flows</option>
+      }
+    </select>
+    <button class="btn btn-ghost btn-icon sm" type="button" (click)="newFlow()" title="New flow"><app-icon name="plus" [size]="14" /></button>
+    @if (flow()) {
+      <button class="btn btn-ghost btn-icon sm" type="button" (click)="store.duplicate(flow()!.id)" title="Duplicate flow"><app-icon name="copy" [size]="14" /></button>
+      <button class="btn btn-ghost btn-icon sm" type="button" (click)="deleteFlow()" title="Delete flow"><app-icon name="trash" [size]="14" /></button>
+      <span class="divider"></span>
+      <button class="btn sm" type="button" (click)="addNode()" [disabled]="running()"><app-icon name="plus" [size]="13" /> Step</button>
+      <button class="btn sm" type="button" [cdkMenuTriggerFor]="fromCollection" [disabled]="running() || !collections.requests().length"><app-icon name="layers" [size]="13" /> From collection</button>
+      <ng-template #fromCollection>
+        <div class="menu collection-menu" cdkMenu>
+          @for (c of collections.collections(); track c.id) {
+            <div class="menu-group">{{ c.name }}</div>
+            @for (r of collections.requests(); track r.id) {
+              @if (r.collectionId === c.id) {
+                <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="addFromCollection(r.id)">
+                  <span class="method" [class]="r.method">{{ r.method }}</span> {{ r.name }}
+                </button>
+              }
+            }
+          }
+        </div>
+      </ng-template>
+      <span class="spacer"></span>
+      @if (connectFrom()) {
+        <span class="badge accent">Click a target step's input to connect · Esc to cancel</span>
+      }
+      <label class="switch">
+        <input type="checkbox" [checked]="flow()!.stopOnError" (change)="patchFlow({ stopOnError: $any($event.target).checked })" /> Stop on error
+      </label>
+      @if (running()) {
+        <button class="btn btn-danger sm" type="button" (click)="runner.stop()"><app-icon name="square" [size]="12" /> Stop</button>
+      } @else {
+        <button class="btn btn-primary sm" type="button" (click)="runFlow()" [disabled]="!!runner.runningFlowId()"><app-icon name="play" [size]="12" /> Run flow</button>
+      }
+    } @else {
+      <span class="spacer"></span>
+    }
+    <button class="btn btn-ghost sm" type="button" (click)="loadDemo()" title="Load the demo flow"><app-icon name="sparkles" [size]="13" /> Demo</button>
+  </div>
+
+  @if (flow(); as f) {
+    <div class="body">
+      <div class="canvas-wrap">
+        <div
+          #canvas
+          class="canvas"
+          [class.connecting]="!!connectFrom()"
+          [style.width.px]="canvasSize().w"
+          [style.height.px]="canvasSize().h"
+          (mousemove)="connectFrom() && trackPointer($event)"
+          (click)="canvasClick()"
+        >
+          <svg class="edges" [attr.width]="canvasSize().w" [attr.height]="canvasSize().h">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head" />
+              </marker>
+              <marker id="arrow-success" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head success" />
+              </marker>
+              <marker id="arrow-failed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head failed" />
+              </marker>
+            </defs>
+            @for (e of edges(); track e.edge.id) {
+              <g class="edge" [class]="'s-' + e.state" [class.selected]="selectedEdgeId() === e.edge.id">
+                <path class="hit" [attr.d]="e.path" (click)="$event.stopPropagation(); selectedEdgeId.set(e.edge.id); selectedNodeId.set(null)" />
+                <path
+                  class="line"
+                  [attr.d]="e.path"
+                  [attr.marker-end]="e.state === 'success' ? 'url(#arrow-success)' : e.state === 'failed' ? 'url(#arrow-failed)' : 'url(#arrow)'"
+                />
+              </g>
+            }
+            @if (pendingPath(); as p) {
+              <path class="pending" [attr.d]="p" />
+            }
+          </svg>
+
+          @for (e of edges(); track e.edge.id) {
+            @if (selectedEdgeId() === e.edge.id) {
+              <button class="edge-delete" type="button" [style.left.px]="e.mid.x - 13" [style.top.px]="e.mid.y - 13" (click)="$event.stopPropagation(); removeEdge(e.edge.id)" title="Remove connection" aria-label="Remove connection">
+                <app-icon name="x" [size]="12" />
+              </button>
+            }
+          }
+
+          @for (n of f.nodes; track n.id) {
+            <div
+              class="node"
+              cdkDrag
+              cdkDragBoundary=".canvas"
+              [cdkDragFreeDragPosition]="{ x: n.x, y: n.y }"
+              [cdkDragDisabled]="running()"
+              (cdkDragMoved)="dragMoved(n, $event)"
+              (cdkDragEnded)="dragEnded(n, $event)"
+              [style.width.px]="NODE_W"
+              [style.height.px]="NODE_H"
+              [class]="'st-' + (stepStatus(n) ?? 'idle')"
+              [class.selected]="selectedNodeId() === n.id"
+              (click)="$event.stopPropagation(); selectNode(n.id)"
+              role="button"
+              [attr.aria-label]="'Step ' + n.name"
+            >
+              <button class="port in" type="button" (mousedown)="$event.stopPropagation()" (click)="finishConnect(n.id, $event)" [class.target]="!!connectFrom() && connectFrom() !== n.id" aria-label="Connect into this step"></button>
+              <div class="node-icon" [class]="n.request.method">
+                <span>{{ n.request.method === 'DELETE' ? 'DEL' : n.request.method === 'OPTIONS' ? 'OPT' : n.request.method }}</span>
+              </div>
+              <div class="node-text">
+                <div class="node-title">
+                  @if (orderIndex().get(n.id); as idx) {
+                    <span class="order">{{ idx }}</span>
+                  }
+                  <span class="ellipsis">{{ n.name }}</span>
+                </div>
+                <div class="node-sub mono ellipsis" [title]="n.request.url">{{ hostOf(n.request.url) }}</div>
+              </div>
+              <div class="node-status">
+                @switch (stepStatus(n)) {
+                  @case ('running') {
+                    <span class="spinner"></span>
+                  }
+                  @case ('success') {
+                    <span class="code ok">{{ stepInfo(n)?.httpStatus }}</span>
+                    <span class="time">{{ formatMs(stepInfo(n)?.durationMs) }}</span>
+                  }
+                  @case ('failed') {
+                    <span class="code bad">{{ stepInfo(n)?.httpStatus ?? 'ERR' }}</span>
+                    <span class="time">{{ formatMs(stepInfo(n)?.durationMs) }}</span>
+                  }
+                  @case ('skipped') {
+                    <span class="time">skipped</span>
+                  }
+                }
+              </div>
+              @if (n.extractions.length) {
+                <span class="var-badge" [title]="'Extracts: ' + extractionNames(n)"><app-icon name="variable" [size]="10" /> {{ n.extractions.length }}</span>
+              }
+              <button class="port out" type="button" (mousedown)="$event.stopPropagation()" (click)="startConnect(n.id, $event)" [class.active]="connectFrom() === n.id" aria-label="Connect from this step"></button>
+            </div>
+          }
+
+          @if (!f.nodes.length) {
+            <div class="canvas-empty">
+              <div class="empty-state">
+                <div class="icon-wrap"><app-icon name="workflow" [size]="24" /></div>
+                <h3>Build your first flow</h3>
+                <p>Add steps, connect them by clicking an output port then an input port, extract values (e.g. a login token) and reuse them in later steps with <code>{{ '{' }}{{ '{' }}token{{ '}' }}{{ '}' }}</code>.</p>
+                <div class="row">
+                  <button class="btn btn-primary" type="button" (click)="$event.stopPropagation(); addNode()"><app-icon name="plus" [size]="14" /> Add step</button>
+                  <button class="btn" type="button" (click)="$event.stopPropagation(); loadDemo()"><app-icon name="sparkles" [size]="14" /> Load demo flow</button>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+      <aside class="inspector-panel scroll">
+        <app-flow-inspector
+          [flow]="f"
+          [node]="selectedNode()"
+          [run]="run()"
+          (nodeChange)="updateNode($event)"
+          (flowChange)="patchFlow($event)"
+          (removeNode)="removeNode($event)"
+          (selectNode)="selectNode($event)"
+        />
+      </aside>
+    </div>
+  } @else {
+    <div class="empty-state">
+      <div class="icon-wrap"><app-icon name="workflow" [size]="24" /></div>
+      <h3>API Flow Visual</h3>
+      <p>Chain requests visually: POST /login → GET /users → GET /users/{{ '{' }}id{{ '}' }} → PUT /users/{{ '{' }}id{{ '}' }}.</p>
+      <div class="row">
+        <button class="btn btn-primary" type="button" (click)="newFlow()"><app-icon name="plus" [size]="14" /> New flow</button>
+        <button class="btn" type="button" (click)="loadDemo()"><app-icon name="sparkles" [size]="14" /> Load demo flow</button>
+      </div>
+    </div>
+  }
+</div>

@@ -1,0 +1,81 @@
+.shell {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+.sidebar {
+  width: 300px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elev);
+  min-height: 0;
+}
+.sidebar-backdrop {
+  display: none;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  > :not(router-outlet) {
+    flex: 1;
+    min-height: 0;
+  }
+}
+.loading {
+  margin: auto;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--text-dim);
+}
+.boot-error {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 16px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: absolute;
+    left: var(--activity-w);
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    width: min(320px, calc(100vw - var(--activity-w) - 24px));
+    box-shadow: var(--shadow);
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 49;
+    background: rgba(2, 6, 14, 0.45);
+  }
+}
+
+@media (max-width: 640px) {
+  .body {
+    flex-direction: column-reverse;
+  }
+  .sidebar {
+    left: 0;
+    bottom: 56px;
+    width: min(340px, calc(100vw - 32px));
+  }
+}

@@ -1,0 +1,146 @@
+<div class="kv">
+  <div class="kv-toolbar">
+    <span class="muted small">
+      @switch (kind()) {
+        @case ('params') { Query parameters — kept in sync with the URL }
+        @case ('headers') { Request headers }
+        @case ('variables') { Variables available as <code>{{ variableExample }}</code> }
+        @default { Form fields }
+      }
+    </span>
+    <span class="spacer"></span>
+    @if (!bulk() && items().length > 1) {
+      <button class="btn btn-ghost sm" type="button" (click)="toggleAll(activeCount() === 0)">{{ activeCount() === 0 ? 'Enable all' : 'Disable all' }}</button>
+    }
+    <button class="btn btn-ghost sm" type="button" (click)="toggleBulk()" [class.active]="bulk()">
+      <app-icon name="edit" [size]="13" /> {{ bulk() ? 'Key-value edit' : 'Bulk edit' }}
+    </button>
+  </div>
+
+  @if (bulk()) {
+    <textarea
+      class="textarea mono bulk"
+      spellcheck="false"
+      [value]="bulkText()"
+      (input)="bulkText.set($any($event.target).value)"
+      (blur)="applyBulk()"
+      [placeholder]="kind() === 'headers' ? 'Accept: application/json\n// Disabled-Header: value' : 'key=value\n// disabled=value'"
+    ></textarea>
+    <p class="faint tiny hint">One entry per line. Prefix with <code>//</code> to disable.</p>
+  } @else {
+    <div class="kv-head" [class.multipart]="kind() === 'multipart'">
+      <span></span>
+      <span></span>
+      <span>Key</span>
+      @if (kind() === 'multipart') {
+        <span>Type</span>
+      }
+      <span>Value</span>
+      <span></span>
+    </div>
+    <div class="kv-body" cdkDropList [cdkDropListData]="rows()" (cdkDropListDropped)="drop($event)" cdkDropListLockAxis="y">
+      @for (row of rows(); track row.id) {
+        <div class="kv-row" cdkDrag [cdkDragDisabled]="isGhost(row)" [class.disabled]="!row.enabled" [class.ghost]="isGhost(row)" [class.multipart]="kind() === 'multipart'">
+          <span class="handle" cdkDragHandle [class.invisible]="isGhost(row)" title="Drag to reorder"><app-icon name="grip" [size]="14" /></span>
+          <input
+            type="checkbox"
+            [checked]="row.enabled"
+            [class.invisible]="isGhost(row)"
+            (change)="patch(row.id, { enabled: $any($event.target).checked })"
+            [attr.aria-label]="'Enable ' + (row.key || 'row')"
+          />
+          <div class="cell" cdkOverlayOrigin #keyOrigin="cdkOverlayOrigin">
+            <input
+              class="kv-input mono"
+              [value]="row.key"
+              [placeholder]="isGhost(row) ? keyPlaceholder() : ''"
+              (input)="patch(row.id, { key: $any($event.target).value })"
+              (focus)="openAc(row.id, 'key')"
+              (blur)="closeAc()"
+              (keydown)="onKeydown($event, row)"
+              spellcheck="false"
+              autocomplete="off"
+              [attr.aria-label]="'Key ' + $index"
+            />
+            @if (warning(row); as w) {
+              <span class="warn" [title]="w"><app-icon name="alert" [size]="13" /></span>
+            }
+          </div>
+          <ng-template
+            cdkConnectedOverlay
+            [cdkConnectedOverlayOrigin]="keyOrigin"
+            [cdkConnectedOverlayOpen]="acOpen(row, 'key')"
+            [cdkConnectedOverlayPositions]="positions"
+            [cdkConnectedOverlayMinWidth]="260"
+          >
+            <ul class="ac menu" role="listbox">
+              @for (s of suggestions(); track s.label; let i = $index) {
+                <li role="option" class="ac-item" [class.active]="ac()?.index === i" (mousedown)="$event.preventDefault(); choose(row, s.label)">
+                  <span class="mono">{{ s.label }}</span>
+                  <span class="faint tiny">{{ s.detail }}</span>
+                </li>
+              }
+            </ul>
+          </ng-template>
+
+          @if (kind() === 'multipart') {
+            <select class="kv-select" [value]="row.kind ?? 'text'" (change)="patch(row.id, { kind: $any($event.target).value })" aria-label="Field type">
+              <option value="text">Text</option>
+              <option value="file">File</option>
+            </select>
+          }
+
+          <div class="cell" cdkOverlayOrigin #valueOrigin="cdkOverlayOrigin">
+            @if (kind() === 'multipart' && row.kind === 'file') {
+              <label class="file-pick">
+                <input type="file" (change)="pickFile(row, $event)" />
+                <app-icon name="upload" [size]="13" />
+                @if (row.fileName) {
+                  <span class="ellipsis mono">{{ row.fileName }}</span>
+                  <span class="faint tiny nowrap">{{ fileSize(row) }}</span>
+                } @else {
+                  <span class="faint">Choose file…</span>
+                }
+              </label>
+            } @else {
+              <input
+                class="kv-input mono"
+                [value]="row.value"
+                [placeholder]="isGhost(row) ? valuePlaceholder() : ''"
+                (input)="patch(row.id, { value: $any($event.target).value })"
+                (focus)="openAc(row.id, 'value')"
+                (blur)="closeAc()"
+                (keydown)="onKeydown($event, row)"
+                spellcheck="false"
+                autocomplete="off"
+                [attr.aria-label]="'Value ' + $index"
+              />
+            }
+          </div>
+          <ng-template
+            cdkConnectedOverlay
+            [cdkConnectedOverlayOrigin]="valueOrigin"
+            [cdkConnectedOverlayOpen]="acOpen(row, 'value')"
+            [cdkConnectedOverlayPositions]="positions"
+            [cdkConnectedOverlayMinWidth]="240"
+          >
+            <ul class="ac menu" role="listbox">
+              @for (s of suggestions(); track s.label; let i = $index) {
+                <li role="option" class="ac-item" [class.active]="ac()?.index === i" (mousedown)="$event.preventDefault(); choose(row, s.label)">
+                  <span class="mono">{{ s.label }}</span>
+                </li>
+              }
+            </ul>
+          </ng-template>
+
+          <button class="btn btn-ghost btn-icon sm del" type="button" (click)="remove(row.id)" [class.invisible]="isGhost(row)" title="Remove">
+            <app-icon name="trash" [size]="13" />
+          </button>
+        </div>
+      }
+    </div>
+    @if (fileError()) {
+      <div class="alert danger small"><app-icon name="alert" [size]="14" /> {{ fileError() }}</div>
+    }
+  }
+</div>

@@ -1,0 +1,100 @@
+<div class="metrics-page">
+  <div class="filters card">
+    <span class="title"><app-icon name="chart" [size]="15" /> Metrics</span>
+    <select class="select sm req" [value]="requestKey()" (change)="requestKey.set($any($event.target).value)" aria-label="Filter by request">
+      <option value="">All requests</option>
+      @for (r of requests(); track r.key) {
+        <option [value]="r.key" [selected]="r.key === requestKey()">{{ r.label }} ({{ r.count }})</option>
+      }
+    </select>
+    <div class="segmented" role="radiogroup" aria-label="Period">
+      @for (p of periods; track p.id) {
+        <button type="button" [class.active]="period() === p.id" (click)="period.set(p.id)">{{ p.label }}</button>
+      }
+    </div>
+    @if (period() === 'custom') {
+      <input class="input sm date" type="datetime-local" [value]="from()" (change)="from.set($any($event.target).value)" aria-label="From" />
+      <span class="faint">→</span>
+      <input class="input sm date" type="datetime-local" [value]="to()" (change)="to.set($any($event.target).value)" aria-label="To" />
+    }
+    <span class="spacer"></span>
+    <span class="faint small">Computed from {{ kpis().total }} local executions</span>
+  </div>
+
+  @if (kpis().total === 0) {
+    <div class="empty-state">
+      <div class="icon-wrap"><app-icon name="chart" [size]="24" /></div>
+      <h3>No executions in this period</h3>
+      <p>Metrics are calculated from the requests you run (stored locally in IndexedDB). Send a few requests or run the demo flow, then come back.</p>
+    </div>
+  } @else {
+    <div class="scroll content">
+      <div class="kpis">
+        <div class="kpi"><span class="label">Executions</span><span class="value">{{ kpis().total }}</span></div>
+        <div class="kpi"><span class="label"><app-icon name="check-circle" [size]="12" class="text-success" /> Success</span><span class="value">{{ kpis().success }}</span><span class="sub">{{ kpis().rate.toFixed(1) }}% success rate</span></div>
+        <div class="kpi"><span class="label"><app-icon name="x-circle" [size]="12" class="text-danger" /> Failures</span><span class="value">{{ kpis().failures }}</span><span class="sub">{{ kpis().httpErrors }} HTTP · {{ kpis().transport }} transport</span></div>
+        <div class="kpi"><span class="label">Average</span><span class="value">{{ formatMs(kpis().avg) }}</span><span class="sub">p95 {{ formatMs(kpis().p95) }}</span></div>
+        <div class="kpi"><span class="label">Fastest</span><span class="value">{{ formatMs(kpis().min) }}</span></div>
+        <div class="kpi"><span class="label">Slowest</span><span class="value">{{ formatMs(kpis().max) }}</span></div>
+      </div>
+
+      <div class="charts">
+        <div class="chart-card card wide">
+          <div class="chart-head">
+            <h3>Response time</h3>
+            <span class="key"><span class="sw series"></span> response <span class="sw warn"></span> HTTP error <span class="sw bad"></span> transport error</span>
+          </div>
+          <div class="chart-box"><app-chart [config]="timeChart()" label="Response time per execution" /></div>
+        </div>
+        <div class="chart-card card">
+          <div class="chart-head"><h3>Status distribution</h3></div>
+          <div class="chart-box"><app-chart [config]="statusChart()" label="Executions by status class" /></div>
+        </div>
+        <div class="chart-card card">
+          <div class="chart-head"><h3>Average time per request</h3></div>
+          <div class="chart-box"><app-chart [config]="perRequestChart()" label="Average response time per request" /></div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="card table-card">
+          <div class="chart-head"><h3>Recent executions</h3></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Time</th><th>Request</th><th>Status</th><th>Duration</th><th>Size</th></tr></thead>
+              <tbody>
+                @for (e of recent(); track e.id) {
+                  <tr class="clickable" (click)="open(e)">
+                    <td class="nowrap">{{ formatDateTime(e.createdAt) }}</td>
+                    <td><span class="method" [class]="e.request.method">{{ e.request.method }}</span> {{ e.name }}</td>
+                    <td>
+                      @if (e.outcome === 'error') {
+                        <span class="badge danger">{{ e.error?.kind }}</span>
+                      } @else {
+                        <span class="badge" [class.success]="statusTone(e.status) === 'success'" [class.warning]="statusTone(e.status) === 'client'" [class.danger]="statusTone(e.status) === 'server'" [class.info]="statusTone(e.status) === 'redirect'">{{ e.status }}</span>
+                      }
+                    </td>
+                    <td class="mono">{{ formatMs(e.durationMs) }}</td>
+                    <td class="mono">{{ formatBytes(e.size) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card errors-card">
+          <div class="chart-head"><h3>Transport errors by kind</h3></div>
+          @for (k of errorKinds(); track k[0]) {
+            <div class="err-row">
+              <span class="mono">{{ k[0] }}</span>
+              <div class="bar"><span [style.width.%]="(k[1] / errorKinds()[0][1]) * 100"></span></div>
+              <b class="mono">{{ k[1] }}</b>
+            </div>
+          } @empty {
+            <p class="faint small">No transport errors in this period. 🎉</p>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

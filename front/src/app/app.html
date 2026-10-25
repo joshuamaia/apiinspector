@@ -1,0 +1,21 @@
+<div class="shell">
+  <app-top-bar />
+  @if (boot.error()) {
+    <div class="boot-error"><app-icon name="alert" [size]="14" /> {{ boot.error() }}</div>
+  }
+  <div class="body">
+    <app-activity-bar />
+    @if (sidebarOpen()) {
+      <div class="sidebar-backdrop" (click)="closeSidebarOnMobile()" aria-hidden="true"></div>
+      <app-sidebar class="sidebar" (navigated)="closeSidebarOnMobile()" />
+    }
+    <main class="main">
+      @if (boot.ready()) {
+        <router-outlet />
+      } @else {
+        <div class="loading"><span class="spinner"></span> Loading workspace…</div>
+      }
+    </main>
+  </div>
+</div>
+<app-toasts />

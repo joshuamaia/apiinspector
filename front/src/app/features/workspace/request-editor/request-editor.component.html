@@ -1,0 +1,87 @@
+<div class="editor" [class.compact]="compact()" (keydown)="onKeydown($event)">
+  <div class="url-bar">
+    <select class="method-select method" [class]="request().method" [value]="request().method" (change)="setMethod($any($event.target).value)" aria-label="HTTP method">
+      @for (m of methods; track m) {
+        <option [value]="m">{{ m }}</option>
+      }
+    </select>
+    <input
+      class="url-input mono"
+      [class.invalid]="urlError()"
+      [value]="request().url"
+      (input)="setUrl($any($event.target).value)"
+      (blur)="touchedUrl.set(true)"
+      (keydown)="onUrlKeydown($event)"
+      placeholder="https://api.example.com/resource"
+      spellcheck="false"
+      autocomplete="off"
+      aria-label="Request URL"
+    />
+    @if (showSend()) {
+      @if (running()) {
+        <button class="btn btn-danger send" type="button" (click)="cancel.emit()" title="Cancel request">
+          <span class="spinner"></span> Cancel
+        </button>
+      } @else {
+        <button class="btn btn-primary send" type="button" (click)="touchedUrl.set(true); send.emit()" title="Send (Ctrl+Enter)">
+          <app-icon name="send" [size]="14" /> Send
+        </button>
+      }
+    }
+  </div>
+  @if (urlError()) {
+    <div class="url-error"><app-icon name="alert" [size]="12" /> {{ urlError() }}</div>
+  }
+  @if (unknownVariables().length) {
+    <div class="url-error warn"><app-icon name="variable" [size]="12" /> Unknown variables: {{ unknownVariables().join(', ') }} — define them in flow variables or extract them in a previous step.</div>
+  }
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" type="button" [class.active]="tab() === 'params'" (click)="tab.set('params')">
+      Params @if (paramCount()) { <span class="count">{{ paramCount() }}</span> }
+    </button>
+    <button class="tab" role="tab" type="button" [class.active]="tab() === 'headers'" (click)="tab.set('headers')">
+      Headers @if (headerCount()) { <span class="count">{{ headerCount() }}</span> }
+    </button>
+    <button class="tab" role="tab" type="button" [class.active]="tab() === 'auth'" (click)="tab.set('auth')">
+      Auth @if (hasAuth()) { <span class="dot"></span> }
+    </button>
+    <button class="tab" role="tab" type="button" [class.active]="tab() === 'body'" (click)="tab.set('body')">
+      Body @if (hasBody()) { <span class="dot"></span> }
+    </button>
+    <button class="tab" role="tab" type="button" [class.active]="tab() === 'settings'" (click)="tab.set('settings')">Settings</button>
+  </nav>
+
+  <div class="tab-body" [class.flush]="tab() === 'body'">
+    @switch (tab()) {
+      @case ('params') {
+        <app-key-value-editor [items]="request().params" kind="params" keyPlaceholder="parameter" valuePlaceholder="value" (itemsChange)="setParams($event)" />
+      }
+      @case ('headers') {
+        <app-key-value-editor [items]="request().headers" kind="headers" keyPlaceholder="Header-Name" valuePlaceholder="value" (itemsChange)="setHeaders($event)" />
+        <p class="faint tiny note">
+          Browser-controlled and hop-by-hop headers (Host, Content-Length, Connection, X-Forwarded-*…) are managed by the proxy and dropped if set.
+        </p>
+      }
+      @case ('auth') {
+        <app-auth-editor [auth]="request().auth" (authChange)="setAuth($event)" />
+      }
+      @case ('body') {
+        <app-body-editor [body]="request().body" [method]="request().method" [headers]="request().headers" (bodyChange)="setBody($event)" />
+      }
+      @case ('settings') {
+        <div class="settings">
+          <div class="field">
+            <label for="req-timeout">Timeout (ms)</label>
+            <input id="req-timeout" class="input" type="number" min="100" step="100" placeholder="Backend default" [value]="request().settings.timeoutMs ?? ''" (change)="setTimeout($any($event.target).value)" />
+            <span class="hint">Capped by the backend maximum.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" [checked]="request().settings.followRedirects" (change)="setFollowRedirects($any($event.target).checked)" />
+            Follow redirects (each hop is re-validated by the proxy)
+          </label>
+        </div>
+      }
+    }
+  </div>
+</div>

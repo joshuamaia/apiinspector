@@ -1,0 +1,213 @@
+<div class="drift-page">
+  <aside class="list card">
+    <div class="list-head">
+      <span class="title"><app-icon name="shield" [size]="15" /> Contracts</span>
+      <span class="spacer"></span>
+      <button class="btn btn-primary sm" type="button" [cdkMenuTriggerFor]="newMenu"><app-icon name="plus" [size]="13" /> New</button>
+      <ng-template #newMenu>
+        <div class="menu" cdkMenu>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="createFromActiveTab()"><app-icon name="send" [size]="14" /> From current workspace response</button>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="createFromPaste()"><app-icon name="file-json" [size]="14" /> Paste reference JSON</button>
+          <div class="menu-separator"></div>
+          <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="loadDemo()"><app-icon name="sparkles" [size]="14" /> Load demo contract</button>
+        </div>
+      </ng-template>
+    </div>
+    <select class="select sm hist" (change)="createFromExecution($any($event.target).value); $any($event.target).value = ''" aria-label="Create baseline from history">
+      <option value="">+ From history execution…</option>
+      @for (e of candidates(); track e.id) {
+        <option [value]="e.id">{{ e.request.method }} {{ e.name }} · {{ e.status }} · {{ timeAgo(e.createdAt) }}</option>
+      }
+    </select>
+    <div class="items scroll">
+      @for (b of store.baselines(); track b.id) {
+        <button type="button" class="item" [class.active]="b.id === store.selectedId()" (click)="store.selectedId.set(b.id)">
+          <app-icon name="shield" [size]="14" />
+          <span class="col-tight grow">
+            <span class="ellipsis name">{{ b.name }}</span>
+            <span class="faint tiny">{{ b.fields.length }} fields · {{ timeAgo(b.updatedAt) }}</span>
+          </span>
+          @if (b.demo) {
+            <span class="badge violet">demo</span>
+          }
+        </button>
+      } @empty {
+        <p class="faint small empty">No contracts yet. Save a JSON response as reference to start detecting drift.</p>
+      }
+    </div>
+  </aside>
+
+  @if (baseline(); as b) {
+    <section class="detail">
+      <div class="detail-head card">
+        <div class="row wrap">
+          <input class="input name" [value]="b.name" (change)="rename($any($event.target).value)" aria-label="Contract name" />
+          <button class="btn btn-ghost btn-icon sm" type="button" (click)="remove()" title="Delete contract" aria-label="Delete contract"><app-icon name="trash" [size]="14" /></button>
+        </div>
+        @if (b.description) {
+          <p class="muted small desc">{{ b.description }}</p>
+        }
+        <div class="row wrap controls">
+          <div class="field linked">
+            <label for="linked">Linked request</label>
+            <select id="linked" class="select sm" [value]="b.requestId ?? ''" (change)="setLinked($any($event.target).value)">
+              <option value="">(none)</option>
+              @for (r of collections.requests(); track r.id) {
+                <option [value]="r.id" [selected]="r.id === b.requestId">{{ r.method }} {{ r.name }}</option>
+              }
+            </select>
+          </div>
+          <label class="switch" title="When enabled, fields that are not part of the contract are reported as a risk">
+            <input type="checkbox" [checked]="b.strictAdditions" (change)="setStrict($any($event.target).checked)" /> Strict: new fields are a risk
+          </label>
+        </div>
+      </div>
+
+      <div class="columns">
+        <!-- Contract rules -->
+        <div class="rules card">
+          <div class="panel-header">
+            <span class="title">Contract fields</span>
+            <span class="faint tiny">{{ b.fields.length }} · {{ unspecified() }} without rule</span>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost sm" type="button" [cdkMenuTriggerFor]="bulkMenu"><app-icon name="wand" [size]="13" /> Bulk</button>
+            <ng-template #bulkMenu>
+              <div class="menu" cdkMenu>
+                <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="bulk('suggest')"><app-icon name="sparkles" [size]="14" /> Suggest from reference</button>
+                <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="bulk('required')"><app-icon name="lock" [size]="14" /> Mark all required</button>
+                <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="bulk('optional')"><app-icon name="minus" [size]="14" /> Mark all optional</button>
+                <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="bulk('reset')"><app-icon name="refresh" [size]="14" /> Reset to unspecified</button>
+                <div class="menu-separator"></div>
+                <button class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="reinfer()"><app-icon name="tree" [size]="14" /> Re-infer from reference</button>
+              </div>
+            </ng-template>
+          </div>
+          <div class="rules-filter">
+            <input class="input sm mono" placeholder="Filter fields…" [value]="fieldFilter()" (input)="fieldFilter.set($any($event.target).value)" aria-label="Filter fields" />
+            <span class="legend faint tiny"><b>R</b> required · <b>O</b> optional · <b>?</b> unspecified · <b>null</b> allowed</span>
+          </div>
+          <div class="rules-list scroll">
+            @for (row of fields(); track row.field.path) {
+              <div class="rule" [class.flagged]="!!row.finding" [class]="row.finding ? 'sev-' + row.finding.severity : ''">
+                <span class="path mono" [style.padding-left.px]="row.depth * 12" [title]="row.field.path">{{ row.label }}</span>
+                <span class="types mono">{{ typeLabel(row.field) }}</span>
+                <label class="nullable" title="null is an acceptable value">
+                  <input type="checkbox" [checked]="row.field.nullable" (change)="setNullable(row.field, $any($event.target).checked)" [attr.aria-label]="'Nullable ' + row.field.path" /> null
+                </label>
+                <div class="segmented req" [class.locked]="row.field.path === '$'">
+                  <button type="button" [class.active]="row.field.requirement === 'required'" (click)="setRequirement(row.field, 'required')" title="Required">R</button>
+                  <button type="button" [class.active]="row.field.requirement === 'optional'" (click)="setRequirement(row.field, 'optional')" title="Optional">O</button>
+                  <button type="button" [class.active]="row.field.requirement === 'unspecified'" (click)="setRequirement(row.field, 'unspecified')" title="Unspecified (insufficient information)">?</button>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Check & report -->
+        <div class="report card">
+          <div class="panel-header">
+            <span class="title">Drift check</span>
+            <span class="spacer"></span>
+            @if (b.requestId) {
+              <button class="btn btn-primary sm" type="button" (click)="runLinked()" [disabled]="checking()">
+                @if (checking()) {
+                  <span class="spinner"></span>
+                } @else {
+                  <app-icon name="play" [size]="12" />
+                }
+                Run linked request
+              </button>
+            }
+            <select class="select sm hist-check" (change)="checkExecution($any($event.target).value); $any($event.target).value = ''" aria-label="Check a history execution">
+              <option value="">History…</option>
+              @for (e of candidates(); track e.id) {
+                <option [value]="e.id">{{ e.request.method }} {{ e.name }} · {{ e.status }} · {{ timeAgo(e.createdAt) }}</option>
+              }
+            </select>
+            <button class="btn sm" type="button" (click)="checkPaste()"><app-icon name="file-json" [size]="13" /> Paste</button>
+            @if (b.demo) {
+              <button class="btn btn-ghost sm" type="button" (click)="checkDemo()" title="Check the local v2 sample (offline)"><app-icon name="sparkles" [size]="13" /> Local v2</button>
+            }
+          </div>
+
+          <div class="report-body scroll">
+            @if (report(); as r) {
+              <div class="verdict" [class]="r.verdict">
+                <app-icon [name]="verdicts[r.verdict].icon" [size]="26" />
+                <div class="col-tight">
+                  <h3>{{ verdicts[r.verdict].title }}</h3>
+                  <p>{{ verdicts[r.verdict].text }}</p>
+                  <span class="faint tiny">Checked: {{ check()!.label }} · {{ timeAgo(check()!.checkedAt) }}</span>
+                </div>
+              </div>
+
+              <div class="counts">
+                @for (s of severities; track s) {
+                  <div class="count-card" [class]="s">
+                    <span class="n">{{ r.counts[s] }}</span>
+                    <span class="l">{{ severityLabel[s] }}</span>
+                  </div>
+                }
+              </div>
+
+              @if (r.unspecifiedFields > 0) {
+                <div class="alert info small">
+                  <app-icon name="info" [size]="14" />
+                  <span>{{ r.unspecifiedFields }} of {{ r.checkedFields }} fields have no rule. Changes on them are reported as <b>needs rule</b> instead of being classified automatically.</span>
+                </div>
+              }
+
+              @for (group of grouped(); track group.severity) {
+                <h4 class="group-title" [class]="group.severity">{{ severityLabel[group.severity] }} · {{ group.findings.length }}</h4>
+                @for (f of group.findings; track f.path + f.kind) {
+                  <div class="finding" [class]="f.severity">
+                    <div class="row wrap">
+                      <span class="kind badge">{{ f.kind }}</span>
+                      <span class="mono path">{{ f.path }}</span>
+                      @if (f.requirement !== 'n/a') {
+                        <span class="badge req-badge">{{ f.requirement }}</span>
+                      }
+                    </div>
+                    <p>{{ f.message }}</p>
+                    @if (f.expected || f.actual) {
+                      <div class="mono tiny faint">
+                        @if (f.expected) {
+                          expected <b>{{ f.expected }}</b>
+                        }
+                        @if (f.actual) {
+                          → actual <b>{{ f.actual }}</b>
+                        }
+                      </div>
+                    }
+                    @if (f.requirement === 'unspecified') {
+                      <div class="row quick">
+                        <button class="btn sm" type="button" (click)="setRequirementByPath(f.path, 'required')">Mark required</button>
+                        <button class="btn sm" type="button" (click)="setRequirementByPath(f.path, 'optional')">Mark optional</button>
+                      </div>
+                    }
+                  </div>
+                }
+              } @empty {
+                <div class="empty-state small-empty"><p>The response matches the contract exactly.</p></div>
+              }
+            } @else {
+              <div class="empty-state">
+                <div class="icon-wrap"><app-icon name="shield-alert" [size]="24" /></div>
+                <h3>Check a response against this contract</h3>
+                <p>Run the linked request, pick an execution from history or paste JSON. The report updates live as you change the rules.</p>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </section>
+  } @else {
+    <div class="empty-state">
+      <div class="icon-wrap"><app-icon name="shield" [size]="24" /></div>
+      <h3>Contract Drift Detector</h3>
+      <p>Save a JSON response as a reference, define which fields are required or optional and detect missing fields, type changes, unexpected nulls and new fields in later responses.</p>
+      <button class="btn btn-primary" type="button" (click)="loadDemo()"><app-icon name="sparkles" [size]="14" /> Load demo contract</button>
+    </div>
+  }
+</div>

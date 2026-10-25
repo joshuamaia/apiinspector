@@ -1,0 +1,35 @@
+name: api-inspector
+
+services:
+  bff:
+    build: ./bff
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      # nginx (front) runs on the private Docker network: trust it to get the real client IP.
+      TRUST_PROXY: uniquelocal
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      ACCESS_TOKEN: ${ACCESS_TOKEN:-}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      PROXY_TIMEOUT_MS: ${PROXY_TIMEOUT_MS:-30000}
+      PROXY_MAX_RESPONSE_BYTES: ${PROXY_MAX_RESPONSE_BYTES:-10485760}
+      PROXY_MAX_REDIRECTS: ${PROXY_MAX_REDIRECTS:-5}
+      PROXY_MAX_CONCURRENCY_PER_CLIENT: ${PROXY_MAX_CONCURRENCY_PER_CLIENT:-5}
+      PROXY_ALLOW_PRIVATE_NETWORKS: ${PROXY_ALLOW_PRIVATE_NETWORKS:-false}
+      PROXY_ALLOWED_HOSTS: ${PROXY_ALLOWED_HOSTS:-}
+      DEMO_API_ENABLED: ${DEMO_API_ENABLED:-true}
+    # Not published on the host: only reachable through the front reverse proxy.
+    expose:
+      - "3000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+  front:
+    build: ./front
+    restart: unless-stopped
+    ports:
+      - "${FRONT_PORT:-8080}:80"
+    depends_on:
+      bff:
+        condition: service_healthy
